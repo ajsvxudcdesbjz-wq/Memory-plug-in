@@ -36,8 +36,8 @@
 在你的 DSH profile 目录（例如 `$DSH_HOME/profiles/desktop`）里：
 
 ```bash
-# 1. 加依赖（换成你自己的仓库地址）
-pnpm add git+https://github.com/<you>/dsh-memory.git
+# 1. 加依赖
+pnpm add git+https://github.com/ajsvxudcdesbjz-wq/memory-plug-in.git
 
 # 2. 把它列进 profile 的 bundles
 ```
