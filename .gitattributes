@@ -1,0 +1,14 @@
+# Store LF in the repository and check LF out everywhere, so a Windows clone
+# with core.autocrlf=true still matches byte for byte.
+* text=auto eol=lf
+
+# Never line-ending convert binary assets.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.zip binary
+*.gz binary
+*.zstd binary
