@@ -37,7 +37,7 @@
 
 ```bash
 # 1. 加依赖
-pnpm add git+https://github.com/ajsvxudcdesbjz-wq/memory-plug-in.git
+pnpm add git+https://github.com/ajsvxudcdesbjz-wq/Memory-plug-in.git
 
 # 2. 把它列进 profile 的 bundles
 ```
