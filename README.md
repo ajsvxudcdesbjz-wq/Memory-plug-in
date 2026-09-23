@@ -18,8 +18,9 @@
 | 设计 | 做法 | token 成本 |
 | --- | --- | --- |
 | **常驻 digest** | 一个 prompt section（order 8500）始终渲染记忆摘要，模型不用再回查历史 | 固定上限，默认约 1050 字符（≈300 CJK token），无 I/O |
-| **单工具** | 只注册一个 `memory` 工具，用 `action` 切换 save/read/list/forget/export | 一个工具 schema，而不是五个 |
-| **免费沉淀压缩摘要** | 监听 `compaction/summary`，把宿主**已经花钱生成**的摘要抄进记忆 | **0** 额外模型调用 |
+| **单工具** | 只注册一个 `memory` 工具，用 `action` 切换 save/read/list/forget/search/scopes/doc/docs/export | 一个工具 schema，而不是九个 |
+| **免费沉淀压缩摘要** | 监听 `compaction/summary`，把宿主**已经花钱生成**的摘要抄进记忆与会话档案 | **0** 额外模型调用 |
+| **按需跨会话** | 别的项目/会话的记忆不注入，`scope=all` + `search`/`docs`/`read` 时才读 | 不看不花，看了才花 |
 
 再加上一条纪律：`kind=task` 且 `pinned=true` 的条目**永远**出现在 digest 里，所以「当前任务 + 下一步」不会因为摘要预算被挤掉。
 
@@ -92,12 +93,41 @@ memory(action, id?, text?, kind?, pinned?, scope?)
 | action | 作用 |
 | --- | --- |
 | `save` | 存一条。带 `id` 就是覆盖已有条目 |
-| `read` | 读全文（给 `id` 读单条；不给就按最近更新顺序输出全部） |
+| `read` | 读全文。给 `id` 读单条；**如果那条是文档，直接把文档正文从磁盘取回来**；不给 `id` 就按最近更新顺序输出摘要 |
 | `list` | 只列 `id/kind/摘要`，省 token |
-| `forget` | 删掉一条 |
+| `search` | 子串检索；配 `scope=all` 可以搜到**其他项目/会话**记过的内容 |
+| `scopes` | 列出所有 scope（哪些项目/会话有记忆、各多少条、最后更新时间） |
+| `doc` | 把 `text` 里的 Markdown 存成一份**会话文档**，落盘并生成可回取的条目 |
+| `docs` | 列出所有会话文档（scope、id、标题、字节数、文件名） |
+| `forget` | 删掉一条（是文档就连文件一起删） |
 | `export` | 导出成 `MEMORY.md`（同时把 Markdown 返回对话） |
 
-`kind` ∈ `fact | decision | task | preference | note | digest`；`scope` ∈ `project`（默认，当前工作区）| `global`（所有工作区通用，比如「用户偏好中文」）。
+`kind` ∈ `fact | decision | task | preference | note | digest | doc`；
+`scope` ∈ `project`（默认，当前工作区）| `global`（所有工作区通用，比如「用户偏好中文」）| `all`（**同时够到其他项目与会话**）。
+
+### 需要时再去看别的会话
+
+默认注入的 digest **只包含当前项目 + global**——这是省 token 的关键。别的会话/项目记了什么，由模型在你需要时主动去取：
+
+```
+memory action=scopes                     # 有哪些项目/会话有记忆
+memory action=search text="部署" scope=all   # 跨会话检索
+memory action=docs scope=all             # 有哪些会话文档
+```
+
+### 把会话总结成文档，随时调回
+
+模型可以把一段对话的结论写成一份 Markdown 文档存下来，之后（哪怕是另一个会话）按 id 读回来：
+
+```
+memory action=doc  text="# 会话总结 …（Markdown 正文）…"
+# → document [m4] # 会话总结 … (1076 chars) -> $DSH_HOME/dsh-memory/sessions/project-D-Harness-m4.md
+
+memory action=docs                       # 列出文档
+memory action=read id=m4                 # 需要时把正文取回上下文
+```
+
+另外，只要开着 `captureCompaction`，**每次上下文压缩都会自动把摘要追加到该会话的档案文档** `sessions/session-<会话id>.md`，并在记忆里生成一条 `doc` 条目指向它——这部分**不花任何额外 token**（摘要本来就是宿主已经生成过的），等于白送一份会话档案。
 
 典型写法：
 
@@ -128,6 +158,7 @@ Durable facts, user preferences, decisions and task state recorded earlier. Trus
 ## 数据与隐私
 
 - 存储位置：`$DSH_HOME/dsh-memory/memory.json`（原子写入：写临时文件后 rename）。
+- 会话文档：`$DSH_HOME/dsh-memory/sessions/*.md`——`memory action=doc` 手写的总结，以及每次上下文压缩自动追加的 `session-<会话id>.md` 档案。
 - 导出：`memory action=export` 生成同目录 `MEMORY.md`，可以直接提交进仓库或分享。
 - 文件格式（v1，迁移友好）：
 
@@ -152,14 +183,18 @@ Durable facts, user preferences, decisions and task state recorded earlier. Trus
 ## 已知限制
 
 - **注入的 digest 只有一个「当前项目」**：进程里同时开多个工作区时，digest 显示最近一次接触的工作区；`memory` 工具写读本身仍然是按工作区正确分 scope 的。要做成每个会话独立注入，需要挂到 `agent.ctx` 的 scoped prompt section 上，这是下一版的事。
-- 注入的 section 变了会让该段提示词缓存失效——所以只在 `save/forget/压缩摘要` 时变化，正常对话里是稳定的。
+- **文档条目会占一行 digest**：每个 `doc` 条目在注入里就是一行「标题 + 摘要」，正常情况下这是特性（提醒模型有文档可调），文档特别多时可以调小 `digestChars` 或把文档设成 `pinned=false` 并接受它被挤出。
+- 注入的 section 变了会让该段提示词缓存失效——所以只在 `save/forget/doc/压缩摘要` 时变化，正常对话里是稳定的。
 - `digest` 用的是字符上限而不是精确 token 计数，CJK 与英文混排时体感会有差异。
+- 会话档案是**追加式**的，超过 40000 字符后从最旧的一端丢弃。
 
 ## 路线图
 
+- [x] 跨会话/跨项目检索（`scope=all` + `search`/`scopes`）
+- [x] 会话总结文档（`action=doc`/`docs`，压缩摘要自动入档）
 - [ ] 每条会话独立的 scoped 注入（`agent.ctx`）
 - [ ] 可选：重复条目自动去重 / 相似合并
-- [ ] 可选：`memory search <关键词>` 做子串检索
+- [ ] 可选：文档自动生成（对一段会话调一次便宜模型做摘要，默认关闭以保持零额外成本）
 - [ ] 导出为 Obsidian 友好的分文件结构
 
 ## License
