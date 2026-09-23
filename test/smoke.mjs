@@ -83,6 +83,26 @@ try {
   await call({ action: 'forget', id: 'evil' })
   assert.ok(existsSync(outside), 'a traversal name must not delete a file outside the store')
 
+  // A pinned entry must survive budget pressure: a busy project scope may not
+  // starve a rule that applies everywhere.
+  await call({
+    action: 'save',
+    scope: 'global',
+    kind: 'preference',
+    pinned: true,
+    text: 'GLOBAL-PINNED-RULE must always be injected',
+  })
+  for (let i = 0; i < 24; i += 1) {
+    await call({ action: 'save', kind: 'fact', text: 'filler entry ' + i + ' ' + 'x'.repeat(80) })
+  }
+  const pressured = section.text()
+  assert.match(
+    pressured,
+    /GLOBAL-PINNED-RULE must always be injected/,
+    'a pinned global rule must never be dropped from the digest',
+  )
+  assert.ok(pressured.length < 3000, 'pinned output must stay bounded, got ' + pressured.length)
+
   // Nothing may be written outside the configured store directory.
   const exported = await call({ action: 'export' })
   assert.equal(exported.ok, true)

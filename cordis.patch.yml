@@ -5,12 +5,15 @@
     - id: memory
       name: dsh-memory
       # config:
-      #   # Where memory.json / MEMORY.md live. Default: $DSH_HOME/dsh-memory
+      #   # Where memory.json / MEMORY.md / sessions live. Default: $DSH_HOME/dsh-memory
       #   storeDir: ''
       #   # Hard cap on the injected digest, in characters. Default: 1050
+      #   # It governs only the unpinned tail; pinned entries are never dropped.
       #   digestChars: 1050
       #   # Maximum stored entries per scope before the oldest unpinned ones are dropped.
       #   maxEntries: 240
+      #   # Ceiling on pinned lines in the digest. Default: 12
+      #   maxPinned: 12
       #   # Record every context-compaction summary into memory (no extra model call).
       #   captureCompaction: true
       #   # Set to false to keep the tools but inject nothing into the prompt.

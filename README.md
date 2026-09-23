@@ -18,11 +18,14 @@
 | 设计 | 做法 | token 成本 |
 | --- | --- | --- |
 | **常驻 digest** | 一个 prompt section（order 8500）始终渲染记忆摘要，模型不用再回查历史 | 固定上限，默认约 1050 字符（≈300 CJK token），无 I/O |
+| **pinned 永不丢弃** | `pinned` 条目不受字符预算裁剪，且 `global` 的 pinned 排在最前——项目条目再多也挤不掉跨项目规则 | 由 `maxPinned`（默认 12 行）兜底 |
 | **单工具** | 只注册一个 `memory` 工具，用 `action` 切换 save/read/list/forget/search/scopes/doc/docs/export | 一个工具 schema，而不是九个 |
 | **免费沉淀压缩摘要** | 监听 `compaction/summary`，把宿主**已经花钱生成**的摘要抄进记忆与会话档案 | **0** 额外模型调用 |
 | **按需跨会话** | 别的项目/会话的记忆不注入，`scope=all` + `search`/`docs`/`read` 时才读 | 不看不花，看了才花 |
 
-再加上一条纪律：`kind=task` 且 `pinned=true` 的条目**永远**出现在 digest 里，所以「当前任务 + 下一步」不会因为摘要预算被挤掉。
+再加上一条纪律：`kind=task` 且 `pinned=true` 的条目**永远**出现在 digest 里，所以「当前任务 + 下一步」不会因为摘要预算被挤掉。`digestChars` 只管未置顶的"最近条目"，置顶条目由 `maxPinned` 单独兜底。
+
+> **硬规则放哪里**：如果一条规则必须在任何情况下都在场（比如「东西一律放 D 盘」），比记忆更稳的地方是 `$DSH_HOME/AGENTS.md`——它由 DSH 内置的 `agent-instructions` 加载，每个会话、每个 preset、每个工作区都会注入，且不占任何记忆预算。记忆适合放"任务状态与上下文事实"，硬规则适合放这里。
 
 ---
 
